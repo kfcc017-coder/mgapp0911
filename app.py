@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
-from supabase import create_client, Client
+import requests
 
 
-# =========================================================
-# 기본 설정
-# =========================================================
+# ============================================================
+# Streamlit 기본 설정
+# ============================================================
 st.set_page_config(
-    page_title="조합원 관리 시스템",
+    page_title="조합원 CRUD 관리",
     page_icon="👥",
     layout="wide"
 )
@@ -15,129 +15,211 @@ st.set_page_config(
 TABLE_NAME = "members"
 
 
-# =========================================================
-# Supabase 연결
-# =========================================================
-@st.cache_resource
-def init_supabase() -> Client:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_SECRET_KEY"]
-
-    return create_client(url, key)
-
-
+# ============================================================
+# Secrets 읽기
+# ============================================================
 try:
-    supabase = init_supabase()
+    SUPABASE_URL = st.secrets["SUPABASE_URL"].rstrip("/")
+    SUPABASE_KEY = st.secrets["SUPABASE_SECRET_KEY"]
 
-except Exception as e:
-    st.error("Supabase 연결 설정을 확인해주세요.")
-    st.exception(e)
+    ADMIN_ID = st.secrets.get("ADMIN_ID", "017")
+    ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "2026")
+
+except Exception:
+    st.error(
+        "Streamlit Secrets 설정을 확인해주세요.\n\n"
+        "SUPABASE_URL과 SUPABASE_SECRET_KEY가 필요합니다."
+    )
     st.stop()
 
 
-# =========================================================
-# 관리자 로그인
-# =========================================================
-def login():
-    if "authenticated" not in st.session_state:
-        st.session_state.authenticated = False
+# ============================================================
+# Supabase REST API 설정
+# ============================================================
+API_URL = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}"
 
-    if st.session_state.authenticated:
-        return True
+HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+}
 
-    st.title("🔐 조합원 관리 시스템")
 
-    st.caption("관리자 로그인이 필요합니다.")
+# ============================================================
+# API 에러 처리
+# ============================================================
+def check_response(response):
+    if response.ok:
+        return
 
-    with st.form("login_form"):
-        login_id = st.text_input("관리자 ID")
-        login_pw = st.text_input(
-            "비밀번호",
-            type="password"
+    try:
+        error_data = response.json()
+        message = error_data.get(
+            "message",
+            response.text
         )
+    except Exception:
+        message = response.text
 
-        submit = st.form_submit_button(
-            "로그인",
-            use_container_width=True
-        )
-
-    if submit:
-
-        admin_id = st.secrets["ADMIN_ID"]
-        admin_pw = st.secrets["ADMIN_PASSWORD"]
-
-        if login_id == admin_id and login_pw == admin_pw:
-
-            st.session_state.authenticated = True
-            st.rerun()
-
-        else:
-            st.error("ID 또는 비밀번호가 올바르지 않습니다.")
-
-    return False
-
-
-if not login():
-    st.stop()
-
-
-# =========================================================
-# 데이터 처리 함수
-# =========================================================
-def get_members():
-
-    response = (
-        supabase
-        .table(TABLE_NAME)
-        .select("*")
-        .order("id")
-        .execute()
+    raise Exception(
+        f"Supabase API 오류 "
+        f"({response.status_code}) : {message}"
     )
 
-    return response.data
+
+# ============================================================
+# CRUD 함수
+# ============================================================
+def get_members():
+
+    params = {
+        "select": "*",
+        "order": "id.asc"
+    }
+
+    response = requests.get(
+        API_URL,
+        headers=HEADERS,
+        params=params,
+        timeout=20
+    )
+
+    check_response(response)
+
+    return response.json()
 
 
 def add_member(data):
 
-    return (
-        supabase
-        .table(TABLE_NAME)
-        .insert(data)
-        .execute()
+    headers = {
+        **HEADERS,
+        "Prefer": "return=representation"
+    }
+
+    response = requests.post(
+        API_URL,
+        headers=headers,
+        json=data,
+        timeout=20
     )
+
+    check_response(response)
+
+    return response.json()
 
 
 def update_member(member_id, data):
 
-    return (
-        supabase
-        .table(TABLE_NAME)
-        .update(data)
-        .eq("id", member_id)
-        .execute()
+    headers = {
+        **HEADERS,
+        "Prefer": "return=representation"
+    }
+
+    params = {
+        "id": f"eq.{member_id}"
+    }
+
+    response = requests.patch(
+        API_URL,
+        headers=headers,
+        params=params,
+        json=data,
+        timeout=20
     )
+
+    check_response(response)
+
+    return response.json()
 
 
 def delete_member(member_id):
 
-    return (
-        supabase
-        .table(TABLE_NAME)
-        .delete()
-        .eq("id", member_id)
-        .execute()
+    headers = {
+        **HEADERS,
+        "Prefer": "return=representation"
+    }
+
+    params = {
+        "id": f"eq.{member_id}"
+    }
+
+    response = requests.delete(
+        API_URL,
+        headers=headers,
+        params=params,
+        timeout=20
     )
 
+    check_response(response)
 
-# =========================================================
+    return response.json()
+
+
+# ============================================================
+# 로그인
+# ============================================================
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+
+def login():
+
+    st.title("🔐 조합원 관리 시스템")
+
+    st.write(
+        "관리자 계정으로 로그인해주세요."
+    )
+
+    with st.form("login_form"):
+
+        user_id = st.text_input(
+            "관리자 ID"
+        )
+
+        password = st.text_input(
+            "비밀번호",
+            type="password"
+        )
+
+        login_button = st.form_submit_button(
+            "로그인",
+            use_container_width=True
+        )
+
+    if login_button:
+
+        if (
+            user_id == ADMIN_ID
+            and password == ADMIN_PASSWORD
+        ):
+
+            st.session_state.authenticated = True
+
+            st.rerun()
+
+        else:
+
+            st.error(
+                "ID 또는 비밀번호가 올바르지 않습니다."
+            )
+
+
+if not st.session_state.authenticated:
+
+    login()
+
+    st.stop()
+
+
+# ============================================================
 # 사이드바
-# =========================================================
+# ============================================================
 with st.sidebar:
 
     st.title("👥 조합원 관리")
 
     menu = st.radio(
-        "메뉴",
+        "메뉴 선택",
         [
             "📊 대시보드",
             "🔍 조합원 조회",
@@ -150,104 +232,148 @@ with st.sidebar:
     st.divider()
 
     if st.button(
-        "로그아웃",
+        "🔄 데이터 새로고침",
         use_container_width=True
     ):
+        st.rerun()
+
+    if st.button(
+        "🚪 로그아웃",
+        use_container_width=True
+    ):
+
         st.session_state.authenticated = False
+
         st.rerun()
 
 
-# =========================================================
-# 데이터 로딩
-# =========================================================
+# ============================================================
+# Supabase 연결 테스트 및 데이터 조회
+# ============================================================
 try:
 
     members = get_members()
 
+    df = pd.DataFrame(members)
+
 except Exception as e:
 
-    st.error("조합원 데이터를 불러올 수 없습니다.")
-    st.exception(e)
+    st.error(
+        "Supabase 데이터 조회에 실패했습니다."
+    )
+
+    st.code(str(e))
+
+    st.info(
+        """
+확인할 항목
+
+1. SUPABASE_URL
+2. SUPABASE_SECRET_KEY
+3. members 테이블 존재 여부
+4. Data API 설정
+5. 테이블 권한
+"""
+    )
+
     st.stop()
 
 
-df = pd.DataFrame(members)
-
-
-# =========================================================
-# 대시보드
-# =========================================================
+# ============================================================
+# Dashboard
+# ============================================================
 if menu == "📊 대시보드":
 
-    st.title("📊 조합원 관리 대시보드")
+    st.title(
+        "📊 조합원 관리 대시보드"
+    )
 
     st.caption(
-        "Supabase 데이터베이스와 실시간으로 연결되어 있습니다."
+        "Supabase REST API 실시간 연결"
     )
 
     col1, col2, col3 = st.columns(3)
 
-    total_members = len(df)
+    total = len(df)
 
-    if not df.empty and "status" in df.columns:
+    normal = 0
+    inactive = 0
 
-        active_members = len(
-            df[df["status"] == "정상"]
+    if (
+        not df.empty
+        and "status" in df.columns
+    ):
+
+        normal = len(
+            df[
+                df["status"]
+                .fillna("")
+                .astype(str)
+                == "정상"
+            ]
         )
 
-        inactive_members = total_members - active_members
-
-    else:
-        active_members = 0
-        inactive_members = 0
+        inactive = total - normal
 
     col1.metric(
         "전체 조합원",
-        f"{total_members:,}명"
+        f"{total:,}명"
     )
 
     col2.metric(
-        "정상",
-        f"{active_members:,}명"
+        "정상 조합원",
+        f"{normal:,}명"
     )
 
     col3.metric(
-        "기타",
-        f"{inactive_members:,}명"
+        "기타 상태",
+        f"{inactive:,}명"
     )
 
     st.divider()
 
-    st.subheader("최근 조합원")
+    st.subheader(
+        "조합원 현황"
+    )
 
-    if not df.empty:
+    if df.empty:
 
-        st.dataframe(
-            df.tail(10),
-            use_container_width=True,
-            hide_index=True
+        st.info(
+            "등록된 조합원이 없습니다."
         )
 
     else:
 
-        st.info("등록된 조합원이 없습니다.")
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True
+        )
 
 
-# =========================================================
+# ============================================================
 # 조회
-# =========================================================
+# ============================================================
 elif menu == "🔍 조합원 조회":
 
-    st.title("🔍 조합원 조회")
+    st.title(
+        "🔍 조합원 조회"
+    )
 
     search = st.text_input(
-        "조합원 검색",
-        placeholder="이름, 조합원번호, 연락처 등을 입력하세요."
+        "검색",
+        placeholder=(
+            "이름, 조합원번호, 연락처, "
+            "소속 금고 등을 입력하세요."
+        )
     )
 
     filtered_df = df.copy()
 
-    if search and not df.empty:
+    if (
+        search
+        and not df.empty
+    ):
 
         mask = (
             df.astype(str)
@@ -265,7 +391,8 @@ elif menu == "🔍 조합원 조회":
         filtered_df = df[mask]
 
     st.write(
-        f"조회 결과 : **{len(filtered_df):,}명**"
+        f"조회 결과: "
+        f"**{len(filtered_df):,}명**"
     )
 
     st.dataframe(
@@ -274,28 +401,33 @@ elif menu == "🔍 조합원 조회":
         hide_index=True
     )
 
-    csv = filtered_df.to_csv(
-        index=False
-    ).encode("utf-8-sig")
+    if not filtered_df.empty:
 
-    st.download_button(
-        "CSV 다운로드",
-        data=csv,
-        file_name="members.csv",
-        mime="text/csv"
-    )
+        csv = filtered_df.to_csv(
+            index=False
+        ).encode(
+            "utf-8-sig"
+        )
+
+        st.download_button(
+            "📥 CSV 다운로드",
+            data=csv,
+            file_name="members.csv",
+            mime="text/csv"
+        )
 
 
-# =========================================================
+# ============================================================
 # 등록
-# =========================================================
+# ============================================================
 elif menu == "➕ 조합원 등록":
 
-    st.title("➕ 조합원 등록")
+    st.title(
+        "➕ 조합원 등록"
+    )
 
     with st.form(
-        "add_member_form",
-        clear_on_submit=True
+        "member_add_form"
     ):
 
         col1, col2 = st.columns(2)
@@ -307,7 +439,7 @@ elif menu == "➕ 조합원 등록":
             )
 
             name = st.text_input(
-                "이름 *"
+                "성명 *"
             )
 
             branch = st.text_input(
@@ -334,26 +466,29 @@ elif menu == "➕ 조합원 등록":
             )
 
         submitted = st.form_submit_button(
-            "조합원 등록",
+            "💾 조합원 등록",
             use_container_width=True
         )
 
     if submitted:
 
-        if not member_no or not name:
+        if (
+            not member_no.strip()
+            or not name.strip()
+        ):
 
             st.warning(
-                "조합원 번호와 이름은 필수입니다."
+                "조합원 번호와 성명은 필수입니다."
             )
 
         else:
 
             data = {
-                "member_no": member_no,
-                "name": name,
-                "branch": branch,
-                "phone": phone,
-                "email": email,
+                "member_no": member_no.strip(),
+                "name": name.strip(),
+                "branch": branch.strip(),
+                "phone": phone.strip(),
+                "email": email.strip(),
                 "status": status
             }
 
@@ -362,7 +497,8 @@ elif menu == "➕ 조합원 등록":
                 add_member(data)
 
                 st.success(
-                    f"{name} 조합원이 등록되었습니다."
+                    f"{name} 조합원이 "
+                    "등록되었습니다."
                 )
 
                 st.rerun()
@@ -370,49 +506,65 @@ elif menu == "➕ 조합원 등록":
             except Exception as e:
 
                 st.error(
-                    "등록 중 오류가 발생했습니다."
+                    "등록에 실패했습니다."
                 )
 
-                st.exception(e)
+                st.code(str(e))
 
 
-# =========================================================
+# ============================================================
 # 수정
-# =========================================================
+# ============================================================
 elif menu == "✏️ 조합원 수정":
 
-    st.title("✏️ 조합원 수정")
+    st.title(
+        "✏️ 조합원 수정"
+    )
 
     if df.empty:
 
         st.info(
-            "수정할 조합원이 없습니다."
+            "등록된 조합원이 없습니다."
+        )
+
+    elif (
+        "id" not in df.columns
+        or "name" not in df.columns
+    ):
+
+        st.error(
+            "members 테이블에 "
+            "id와 name 컬럼이 필요합니다."
         )
 
     else:
 
-        # 표시용 이름 생성
-        df["display_name"] = (
-            df["id"].astype(str)
-            + " | "
-            + df["name"].fillna("")
-        )
+        member_options = {}
 
-        selected = st.selectbox(
+        for _, row in df.iterrows():
+
+            label = (
+                f"{row['id']} | "
+                f"{row.get('name', '')}"
+            )
+
+            member_options[label] = row["id"]
+
+        selected_label = st.selectbox(
             "수정할 조합원",
-            df["display_name"].tolist()
+            list(member_options.keys())
         )
 
-        selected_id = int(
-            selected.split("|")[0].strip()
-        )
+        member_id = member_options[
+            selected_label
+        ]
 
         member = df[
-            df["id"] == selected_id
+            df["id"] == member_id
         ].iloc[0]
 
         with st.form(
-            "update_member_form"
+            "member_update_form"
         ):
 
             col1, col2 = st.columns(2)
@@ -430,7 +582,7 @@ elif menu == "✏️ 조합원 수정":
                 )
 
                 name = st.text_input(
-                    "이름",
+                    "성명",
                     value=str(
                         member.get(
                             "name",
@@ -477,59 +629,58 @@ elif menu == "✏️ 조합원 수정":
                     "탈퇴"
                 ]
 
-                current_status = (
+                current_status = str(
                     member.get(
                         "status",
                         "정상"
-                    )
-                    or "정상"
+                    ) or "정상"
                 )
 
-                try:
-
-                    status_index = (
-                        status_options.index(
-                            current_status
-                        )
+                if (
+                    current_status
+                    not in status_options
+                ):
+                    status_options.insert(
+                        0,
+                        current_status
                     )
-
-                except ValueError:
-
-                    status_index = 0
 
                 status = st.selectbox(
                     "상태",
                     status_options,
-                    index=status_index
+                    index=status_options.index(
+                        current_status
+                    )
                 )
 
             submitted = (
                 st.form_submit_button(
-                    "변경사항 저장",
+                    "💾 변경사항 저장",
                     use_container_width=True
                 )
             )
 
         if submitted:
 
-            update_data = {
-                "member_no": member_no,
-                "name": name,
-                "branch": branch,
-                "phone": phone,
-                "email": email,
+            data = {
+                "member_no": member_no.strip(),
+                "name": name.strip(),
+                "branch": branch.strip(),
+                "phone": phone.strip(),
+                "email": email.strip(),
                 "status": status
             }
 
             try:
 
                 update_member(
-                    selected_id,
-                    update_data
+                    member_id,
+                    data
                 )
 
                 st.success(
-                    "조합원 정보가 수정되었습니다."
+                    "조합원 정보가 "
+                    "수정되었습니다."
                 )
 
                 st.rerun()
@@ -537,69 +688,83 @@ elif menu == "✏️ 조합원 수정":
             except Exception as e:
 
                 st.error(
-                    "수정 중 오류가 발생했습니다."
+                    "수정에 실패했습니다."
                 )
 
-                st.exception(e)
+                st.code(str(e))
 
 
-# =========================================================
+# ============================================================
 # 삭제
-# =========================================================
+# ============================================================
 elif menu == "🗑️ 조합원 삭제":
 
-    st.title("🗑️ 조합원 삭제")
+    st.title(
+        "🗑️ 조합원 삭제"
+    )
 
     st.warning(
-        "삭제한 조합원 정보는 복구할 수 없습니다."
+        "삭제된 데이터는 복구하기 어렵습니다."
     )
 
     if df.empty:
 
         st.info(
-            "삭제할 조합원이 없습니다."
+            "등록된 조합원이 없습니다."
+        )
+
+    elif (
+        "id" not in df.columns
+        or "name" not in df.columns
+    ):
+
+        st.error(
+            "members 테이블에 "
+            "id와 name 컬럼이 필요합니다."
         )
 
     else:
 
-        df["display_name"] = (
-            df["id"].astype(str)
-            + " | "
-            + df["name"].fillna("")
-        )
+        member_options = {}
 
-        selected = st.selectbox(
+        for _, row in df.iterrows():
+
+            label = (
+                f"{row['id']} | "
+                f"{row.get('name', '')}"
+            )
+
+            member_options[label] = row["id"]
+
+        selected_label = st.selectbox(
             "삭제할 조합원",
-            df["display_name"].tolist()
+            list(member_options.keys())
         )
 
-        selected_id = int(
-            selected.split("|")[0].strip()
-        )
+        member_id = member_options[
+            selected_label
+        ]
 
         member = df[
-            df["id"] == selected_id
-        ].iloc[0]
+            df["id"] == member_id
+        ]
 
-        st.write("### 삭제 대상")
+        st.subheader(
+            "삭제 대상"
+        )
 
         st.dataframe(
-            pd.DataFrame(
-                [member.drop(
-                    labels=["display_name"],
-                    errors="ignore"
-                )]
-            ),
+            member,
             use_container_width=True,
             hide_index=True
         )
 
         confirm = st.checkbox(
-            "위 조합원을 삭제하는 것에 동의합니다."
+            "위 조합원 정보를 삭제하겠습니다."
         )
 
         if st.button(
-            "조합원 삭제",
+            "🗑️ 삭제",
             type="primary",
             disabled=not confirm,
             use_container_width=True
@@ -608,11 +773,12 @@ elif menu == "🗑️ 조합원 삭제":
             try:
 
                 delete_member(
-                    selected_id
+                    member_id
                 )
 
                 st.success(
-                    "조합원이 삭제되었습니다."
+                    "조합원 정보가 "
+                    "삭제되었습니다."
                 )
 
                 st.rerun()
@@ -620,7 +786,7 @@ elif menu == "🗑️ 조합원 삭제":
             except Exception as e:
 
                 st.error(
-                    "삭제 중 오류가 발생했습니다."
+                    "삭제에 실패했습니다."
                 )
 
-                st.exception(e)
+                st.code(str(e))
