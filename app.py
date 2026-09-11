@@ -7,29 +7,49 @@ import os
 # ============================================================
 
 st.set_page_config(
-    page_title="조합원 CRUD 대시보드",
-    page_icon="👥",
+    page_title="주요 금융기관 정기예금 금리 대시보드",
+    page_icon="🏦",
     layout="wide"
 )
 
-CSV_FILE = "members.csv"
+CSV_FILE = "주요_금융기관_정기예금_금리비교_2026-09-10.csv"
 
 
 # ============================================================
-# CSV 데이터 관리 함수
+# CSV 불러오기
 # ============================================================
 
 def load_data():
 
-    if os.path.exists(CSV_FILE):
+    if not os.path.exists(CSV_FILE):
+
+        st.error(
+            f"CSV 파일을 찾을 수 없습니다.\n\n"
+            f"찾는 파일명: {CSV_FILE}"
+        )
+
+        st.info(
+            "GitHub 저장소에서 app.py와 CSV 파일이 "
+            "같은 폴더에 있는지 확인해주세요."
+        )
+
+        st.stop()
+
+    try:
+
+        df = pd.read_csv(
+            CSV_FILE
+        )
+
+        return df
+
+    except UnicodeDecodeError:
 
         try:
+
             df = pd.read_csv(
                 CSV_FILE,
-                dtype={
-                    "member_no": str,
-                    "phone": str
-                }
+                encoding="cp949"
             )
 
             return df
@@ -37,44 +57,19 @@ def load_data():
         except Exception as e:
 
             st.error(
-                f"CSV 파일을 읽는 중 오류가 발생했습니다.\n\n{e}"
+                f"CSV 파일을 읽을 수 없습니다.\n\n{e}"
             )
 
-            return pd.DataFrame()
-
-    else:
-
-        st.error(
-            "members.csv 파일을 찾을 수 없습니다."
-        )
-
-        return pd.DataFrame()
-
-
-def save_data(df):
-
-    try:
-
-        df.to_csv(
-            CSV_FILE,
-            index=False,
-            encoding="utf-8-sig"
-        )
-
-        return True
+            st.stop()
 
     except Exception as e:
 
         st.error(
-            f"CSV 저장 중 오류가 발생했습니다.\n\n{e}"
+            f"CSV 파일을 읽는 중 오류가 발생했습니다.\n\n{e}"
         )
 
-        return False
+        st.stop()
 
-
-# ============================================================
-# 데이터 불러오기
-# ============================================================
 
 df = load_data()
 
@@ -85,186 +80,121 @@ df = load_data()
 
 with st.sidebar:
 
-    st.title("👥 조합원 관리")
-
-    st.caption(
-        "CSV 기반 CRUD Dashboard"
-    )
-
-    st.divider()
+    st.title("🏦 예금 금리 분석")
 
     menu = st.radio(
         "메뉴",
         [
             "📊 대시보드",
-            "🔍 조합원 조회",
-            "➕ 조합원 등록",
-            "✏️ 조합원 수정",
-            "🗑️ 조합원 삭제"
+            "🔍 데이터 조회",
+            "📈 금리 분석",
+            "📋 원본 데이터"
         ]
     )
 
     st.divider()
 
     if st.button(
-        "🔄 데이터 새로고침",
+        "🔄 새로고침",
         use_container_width=True
     ):
-
         st.rerun()
 
-    st.info(
-        "현재 데이터는 members.csv 파일을 기준으로 표시됩니다."
+    st.caption(
+        f"데이터 파일\n{CSV_FILE}"
     )
 
 
 # ============================================================
-# Dashboard
+# 대시보드
 # ============================================================
 
 if menu == "📊 대시보드":
 
     st.title(
-        "📊 조합원 관리 대시보드"
+        "📊 주요 금융기관 정기예금 금리 대시보드"
     )
 
     st.caption(
-        "GitHub CSV 파일 기반 조합원 CRUD 관리"
+        "2026년 9월 10일 기준 금융기관 정기예금 금리 비교"
     )
 
-    if df.empty:
+    # --------------------------------------------------------
+    # 기본 데이터 정보
+    # --------------------------------------------------------
 
-        st.warning(
-            "등록된 조합원이 없습니다."
-        )
+    col1, col2, col3 = st.columns(3)
 
-    else:
+    col1.metric(
+        "데이터 건수",
+        f"{len(df):,}건"
+    )
 
-        total = len(df)
+    col2.metric(
+        "컬럼 수",
+        f"{len(df.columns):,}개"
+    )
 
-        normal = len(
-            df[
-                df["status"]
-                .fillna("")
-                .astype(str)
-                == "정상"
-            ]
-        )
+    col3.metric(
+        "결측값",
+        f"{df.isna().sum().sum():,}개"
+    )
 
-        dormant = len(
-            df[
-                df["status"]
-                .fillna("")
-                .astype(str)
-                == "휴면"
-            ]
-        )
+    st.divider()
 
-        withdrawn = len(
-            df[
-                df["status"]
-                .fillna("")
-                .astype(str)
-                == "탈퇴"
-            ]
-        )
+    st.subheader(
+        "📋 데이터 미리보기"
+    )
 
-        col1, col2, col3, col4 = st.columns(4)
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True
+    )
 
-        col1.metric(
-            "전체 조합원",
-            f"{total:,}명"
-        )
+    st.divider()
 
-        col2.metric(
-            "정상",
-            f"{normal:,}명"
-        )
+    st.subheader(
+        "🔎 CSV 컬럼 정보"
+    )
 
-        col3.metric(
-            "휴면",
-            f"{dormant:,}명"
-        )
+    column_df = pd.DataFrame({
+        "컬럼명": df.columns,
+        "데이터형": [
+            str(df[col].dtype)
+            for col in df.columns
+        ],
+        "결측값": [
+            df[col].isna().sum()
+            for col in df.columns
+        ]
+    })
 
-        col4.metric(
-            "탈퇴",
-            f"{withdrawn:,}명"
-        )
-
-        st.divider()
-
-        # ----------------------------------------
-        # 금고별 조합원 현황
-        # ----------------------------------------
-
-        st.subheader(
-            "🏦 금고별 조합원 현황"
-        )
-
-        if "branch" in df.columns:
-
-            branch_count = (
-                df["branch"]
-                .fillna("미지정")
-                .value_counts()
-            )
-
-            st.bar_chart(
-                branch_count
-            )
-
-        st.divider()
-
-        # ----------------------------------------
-        # 조합원 목록
-        # ----------------------------------------
-
-        st.subheader(
-            "👥 전체 조합원"
-        )
-
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True
-        )
+    st.dataframe(
+        column_df,
+        use_container_width=True,
+        hide_index=True
+    )
 
 
 # ============================================================
-# 조회
+# 데이터 조회
 # ============================================================
 
-elif menu == "🔍 조합원 조회":
+elif menu == "🔍 데이터 조회":
 
     st.title(
-        "🔍 조합원 조회"
+        "🔍 금융기관 데이터 조회"
     )
 
     search = st.text_input(
         "통합 검색",
-        placeholder=(
-            "이름, 조합원번호, "
-            "금고명, 연락처 등을 입력하세요."
-        )
-    )
-
-    status_filter = st.selectbox(
-        "상태",
-        [
-            "전체",
-            "정상",
-            "휴면",
-            "탈퇴"
-        ]
+        placeholder="은행명, 상품명 등을 입력하세요."
     )
 
     filtered_df = df.copy()
 
-    # ----------------------------------------
-    # 검색어
-    # ----------------------------------------
-
-    if search and not filtered_df.empty:
+    if search:
 
         mask = (
             filtered_df
@@ -284,22 +214,8 @@ elif menu == "🔍 조합원 조회":
             mask
         ]
 
-    # ----------------------------------------
-    # 상태 필터
-    # ----------------------------------------
-
-    if (
-        status_filter != "전체"
-        and not filtered_df.empty
-    ):
-
-        filtered_df = filtered_df[
-            filtered_df["status"]
-            == status_filter
-        ]
-
     st.write(
-        f"조회 결과: **{len(filtered_df):,}명**"
+        f"조회 결과: **{len(filtered_df):,}건**"
     )
 
     st.dataframe(
@@ -307,10 +223,6 @@ elif menu == "🔍 조합원 조회":
         use_container_width=True,
         hide_index=True
     )
-
-    # ----------------------------------------
-    # CSV 다운로드
-    # ----------------------------------------
 
     csv_data = (
         filtered_df
@@ -325,409 +237,186 @@ elif menu == "🔍 조합원 조회":
     st.download_button(
         "📥 조회 결과 CSV 다운로드",
         data=csv_data,
-        file_name="member_search_result.csv",
+        file_name="deposit_rate_search.csv",
         mime="text/csv",
         use_container_width=True
     )
 
 
 # ============================================================
-# 등록
+# 금리 분석
 # ============================================================
 
-elif menu == "➕ 조합원 등록":
+elif menu == "📈 금리 분석":
 
     st.title(
-        "➕ 조합원 등록"
+        "📈 정기예금 금리 분석"
     )
 
-    with st.form(
-        "add_member_form"
-    ):
+    # 숫자형으로 변환 가능한 컬럼 찾기
+    numeric_candidates = []
 
-        col1, col2 = st.columns(2)
+    for column in df.columns:
 
-        with col1:
-
-            member_no = st.text_input(
-                "조합원 번호 *",
-                placeholder="예: M006"
-            )
-
-            name = st.text_input(
-                "성명 *"
-            )
-
-            branch = st.text_input(
-                "소속 금고"
-            )
-
-        with col2:
-
-            phone = st.text_input(
-                "연락처",
-                placeholder="010-0000-0000"
-            )
-
-            email = st.text_input(
-                "이메일"
-            )
-
-            status = st.selectbox(
-                "상태",
-                [
-                    "정상",
-                    "휴면",
-                    "탈퇴"
-                ]
-            )
-
-        submitted = (
-            st.form_submit_button(
-                "💾 조합원 등록",
-                use_container_width=True
-            )
+        converted = pd.to_numeric(
+            df[column],
+            errors="coerce"
         )
 
-    if submitted:
-
-        # ----------------------------------------
-        # 필수값 확인
-        # ----------------------------------------
-
-        if (
-            not member_no.strip()
-            or not name.strip()
-        ):
-
-            st.warning(
-                "조합원 번호와 성명은 필수입니다."
+        if converted.notna().sum() > 0:
+            numeric_candidates.append(
+                column
             )
 
-        elif (
-            not df.empty
-            and member_no
-            in df["member_no"].astype(str).values
-        ):
+    if not numeric_candidates:
 
-            st.error(
-                "이미 등록된 조합원 번호입니다."
-            )
-
-        else:
-
-            # ----------------------------------------
-            # ID 자동 생성
-            # ----------------------------------------
-
-            if df.empty:
-
-                new_id = 1
-
-            else:
-
-                new_id = (
-                    pd.to_numeric(
-                        df["id"],
-                        errors="coerce"
-                    )
-                    .fillna(0)
-                    .max()
-                    + 1
-                )
-
-                new_id = int(
-                    new_id
-                )
-
-            new_member = pd.DataFrame(
-                [
-                    {
-                        "id": new_id,
-                        "member_no": member_no.strip(),
-                        "name": name.strip(),
-                        "branch": branch.strip(),
-                        "phone": phone.strip(),
-                        "email": email.strip(),
-                        "status": status
-                    }
-                ]
-            )
-
-            new_df = pd.concat(
-                [
-                    df,
-                    new_member
-                ],
-                ignore_index=True
-            )
-
-            if save_data(
-                new_df
-            ):
-
-                st.success(
-                    f"{name} 조합원이 등록되었습니다."
-                )
-
-                st.rerun()
-
-
-# ============================================================
-# 수정
-# ============================================================
-
-elif menu == "✏️ 조합원 수정":
-
-    st.title(
-        "✏️ 조합원 수정"
-    )
-
-    if df.empty:
-
-        st.info(
-            "등록된 조합원이 없습니다."
+        st.warning(
+            "분석 가능한 숫자형 금리 컬럼을 찾지 못했습니다."
         )
 
     else:
 
-        options = {}
-
-        for index, row in df.iterrows():
-
-            label = (
-                f"{row['member_no']} | "
-                f"{row['name']} | "
-                f"{row['branch']}"
-            )
-
-            options[
-                label
-            ] = index
-
-        selected = st.selectbox(
-            "수정할 조합원",
-            list(
-                options.keys()
-            )
+        selected_column = st.selectbox(
+            "분석할 금리 컬럼",
+            numeric_candidates
         )
 
-        row_index = options[
-            selected
-        ]
+        values = pd.to_numeric(
+            df[selected_column],
+            errors="coerce"
+        ).dropna()
 
-        member = df.loc[
-            row_index
-        ]
+        if values.empty:
 
-        with st.form(
-            "update_member_form"
-        ):
+            st.warning(
+                "선택한 컬럼에서 숫자 데이터를 찾을 수 없습니다."
+            )
+
+        else:
+
+            col1, col2, col3, col4 = st.columns(4)
+
+            col1.metric(
+                "평균",
+                f"{values.mean():.2f}"
+            )
+
+            col2.metric(
+                "최고",
+                f"{values.max():.2f}"
+            )
+
+            col3.metric(
+                "최저",
+                f"{values.min():.2f}"
+            )
+
+            col4.metric(
+                "최고-최저 차이",
+                f"{values.max() - values.min():.2f}"
+            )
+
+            st.divider()
+
+            st.subheader(
+                f"📊 {selected_column} 분포"
+            )
+
+            chart_df = pd.DataFrame({
+                selected_column: values
+            })
+
+            st.bar_chart(
+                chart_df
+            )
+
+            # ----------------------------------------------
+            # 최고 / 최저 데이터
+            # ----------------------------------------------
+
+            st.divider()
 
             col1, col2 = st.columns(2)
 
             with col1:
 
-                member_no = st.text_input(
-                    "조합원 번호",
-                    value=str(
-                        member["member_no"]
-                    )
+                st.subheader(
+                    "🔺 최고 금리"
                 )
 
-                name = st.text_input(
-                    "성명",
-                    value=str(
-                        member["name"]
-                    )
-                )
+                max_value = values.max()
 
-                branch = st.text_input(
-                    "소속 금고",
-                    value=str(
-                        member["branch"]
+                max_rows = df[
+                    pd.to_numeric(
+                        df[selected_column],
+                        errors="coerce"
                     )
+                    == max_value
+                ]
+
+                st.dataframe(
+                    max_rows,
+                    use_container_width=True,
+                    hide_index=True
                 )
 
             with col2:
 
-                phone = st.text_input(
-                    "연락처",
-                    value=str(
-                        member["phone"]
-                    )
+                st.subheader(
+                    "🔻 최저 금리"
                 )
 
-                email = st.text_input(
-                    "이메일",
-                    value=str(
-                        member["email"]
-                    )
-                )
+                min_value = values.min()
 
-                status_options = [
-                    "정상",
-                    "휴면",
-                    "탈퇴"
+                min_rows = df[
+                    pd.to_numeric(
+                        df[selected_column],
+                        errors="coerce"
+                    )
+                    == min_value
                 ]
 
-                current_status = str(
-                    member["status"]
+                st.dataframe(
+                    min_rows,
+                    use_container_width=True,
+                    hide_index=True
                 )
-
-                if (
-                    current_status
-                    not in status_options
-                ):
-
-                    current_status = "정상"
-
-                status = st.selectbox(
-                    "상태",
-                    status_options,
-                    index=status_options.index(
-                        current_status
-                    )
-                )
-
-            submitted = (
-                st.form_submit_button(
-                    "💾 변경사항 저장",
-                    use_container_width=True
-                )
-            )
-
-        if submitted:
-
-            df.at[
-                row_index,
-                "member_no"
-            ] = member_no.strip()
-
-            df.at[
-                row_index,
-                "name"
-            ] = name.strip()
-
-            df.at[
-                row_index,
-                "branch"
-            ] = branch.strip()
-
-            df.at[
-                row_index,
-                "phone"
-            ] = phone.strip()
-
-            df.at[
-                row_index,
-                "email"
-            ] = email.strip()
-
-            df.at[
-                row_index,
-                "status"
-            ] = status
-
-            if save_data(df):
-
-                st.success(
-                    "조합원 정보가 수정되었습니다."
-                )
-
-                st.rerun()
 
 
 # ============================================================
-# 삭제
+# 원본 데이터
 # ============================================================
 
-elif menu == "🗑️ 조합원 삭제":
+elif menu == "📋 원본 데이터":
 
     st.title(
-        "🗑️ 조합원 삭제"
+        "📋 원본 CSV 데이터"
     )
 
-    if df.empty:
+    st.write(
+        f"총 **{len(df):,}건**의 데이터가 있습니다."
+    )
 
-        st.info(
-            "등록된 조합원이 없습니다."
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    csv_data = (
+        df
+        .to_csv(
+            index=False
         )
-
-    else:
-
-        options = {}
-
-        for index, row in df.iterrows():
-
-            label = (
-                f"{row['member_no']} | "
-                f"{row['name']} | "
-                f"{row['branch']}"
-            )
-
-            options[
-                label
-            ] = index
-
-        selected = st.selectbox(
-            "삭제할 조합원",
-            list(
-                options.keys()
-            )
+        .encode(
+            "utf-8-sig"
         )
+    )
 
-        row_index = options[
-            selected
-        ]
-
-        member = df.loc[
-            [
-                row_index
-            ]
-        ]
-
-        st.write(
-            "### 삭제 대상"
-        )
-
-        st.dataframe(
-            member,
-            use_container_width=True,
-            hide_index=True
-        )
-
-        st.warning(
-            "선택한 조합원을 삭제하시겠습니까?"
-        )
-
-        confirm = st.checkbox(
-            "삭제에 동의합니다."
-        )
-
-        if st.button(
-            "🗑️ 조합원 삭제",
-            type="primary",
-            disabled=not confirm,
-            use_container_width=True
-        ):
-
-            new_df = (
-                df
-                .drop(
-                    index=row_index
-                )
-                .reset_index(
-                    drop=True
-                )
-            )
-
-            if save_data(
-                new_df
-            ):
-
-                st.success(
-                    "조합원이 삭제되었습니다."
-                )
-
-                st.rerun()
+    st.download_button(
+        "📥 전체 데이터 다운로드",
+        data=csv_data,
+        file_name=CSV_FILE,
+        mime="text/csv",
+        use_container_width=True
+    )
